@@ -1,0 +1,14 @@
+# Ignore build directories
+build/
+bin/
+obj/
+docs/
+extras/
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore common C++ artifacts
+*.o
+*.out
+*.exe
