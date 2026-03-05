@@ -11,6 +11,9 @@
 // emdw headers
 #include "emdw.hpp"
 #include "discretetable.hpp"
+#include "clustergraph.hpp"
+#include "lbp_cg.hpp"
+#include "messagequeue.hpp"
 
 // standard headers
 #include <iostream>  // cout, endl, flush, cin, cerr
@@ -249,8 +252,75 @@ int main(int, char *argv[]) {
     //  0  0.448909
     //  1  0.551091
 
+    // Prac 4 Q1.2 (d) 
+    rcptr<Factor> m_phi2_to_I = ptrI; // The message is the factor itself
+    rcptr<Factor> m_phi3_to_I = ptrSgI->observeAndReduce({S}, {1}); 
 
-    return 0; // tell the world that all is fine
+    rcptr<Factor> m_I_to_phi4 = m_phi2_to_I->absorb(m_phi3_to_I);
+
+    rcptr<Factor> m_phi4_to_G = ptrGgDI->observeAndReduce({D}, {1})->absorb(m_I_to_phi4)->marginalize({G});
+
+    rcptr<Factor> m_phi5_to_L = m_phi4_to_G->absorb(ptrLgG)->marginalize({L})->normalize();
+    std::cout << __FILE__ << ":" << __LINE__ << " - BP to determine p(L|D = 1, S = 1): " << *m_phi5_to_L << std::endl;
+
+    // Output
+    //  0  0.448909
+    //  1  0.551091
+
+    // // Prac 4 Q1.2 (e) 
+    // rcptr<Factor> m_L_to_phi5 = new Factor({L});
+    // m_L_to_phi5->fill(1.0);
+    // rcptr<Factor> temp_phi5 = ptrLgG->absorb(m_phi4_to_G)->absorb(m_L_to_phi5);
+    // rcptr<Factor> pL_Result = temp_phi5->marginalize({L})->normalize();
+    // std::cout << __FILE__ << ":" << __LINE__ << " - BP to determine p(L|D = 1, S = 1) at factor: " << *pL_Result << std::endl;
+
+    // Question 1.3
+
+    vector< rcptr<Factor> > factorPtrs; // Create a vector of factor pointers
+    factorPtrs.push_back(ptrLgG);
+    factorPtrs.push_back(ptrGgDI);
+    factorPtrs.push_back(ptrSgI);
+    factorPtrs.push_back(ptrD);
+    factorPtrs.push_back(ptrI);
+
+    // Pass all observed RVs
+    map<RVIdType, AnyType> observedRVs;
+    observedRVs[D] = 1;
+    observedRVs[S] = 1;
+
+    // Create FG
+    ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, observedRVs);
+
+    // Init messages and message queue
+    map<Idx2, rcptr<Factor>> messages;
+    MessageQueue msgQueue;
+
+    // 1. Iterate through all pairs of nodes to find edges
+    for (int i = 0; i < cg.nNodes(); ++i) {
+        for (int j = 0; j < cg.nNodes(); ++j) {
+            if (cg.is_edge(i, j)) {
+                Idx2 ij(i, j);
+                
+                // 2. Initialize the message
+                // If create_unit_message is missing, use create_message or 
+                // manually construct using the separator variables
+                messages[ij] = cg.create_message(ij); 
+                messages[ij]->fill(1.0); // Use fill(1.0) or your version's equivalent
+
+                // 3. Try push() or push_back() for the queue
+                msgQueue.push(ij); 
+            }
+        }
+    }
+
+    unsigned nMsgs = loopyBP_CG(cg, messages, msgQueue);
+    cout << "Sent " << nMsgs << " messages." << endl;
+
+    // p(L|D = 1, S = 1)
+    rcptr<Factor> belief_L = queryLBP_CG(cg, messages, {L})->normalize();
+    std::cout << __FILE__ << ":" << __LINE__ << " - EMDW result for p(L|D = 1, S = 1): " << *belief_L << std::endl;
+
+    return 0; 
   } // try
 
   catch (char msg[]) {
