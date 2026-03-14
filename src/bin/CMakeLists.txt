@@ -31,3 +31,6 @@ target_link_libraries(week4_Q2 emdw)
 
 add_executable(week5_Q1 week5_Q1.cc)
 target_link_libraries(week5_Q1 emdw)
+
+add_executable(week5_Q2 week5_Q2.cc)
+target_link_libraries(week5_Q2 emdw)
