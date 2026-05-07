@@ -469,7 +469,7 @@ int main(int, char *argv[]) {
         // 1. Initialize message structures
     // The compiler note suggests using 'Idx2' for the map key
     std::map<Idx2, rcptr<Factor>> messages; 
-    MessageQueue msgQueue; // Remove emdw:: prefix if it's causing an error
+    MessageQueue msgQueue; 
 
     // 2. Perform BP message passing
     // Note: loopyBP_CG is used for both JTs and loopy graphs in this framework [cite: 273, 348]
