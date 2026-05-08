@@ -63,6 +63,7 @@ int main(int, char *argv[]) {
 
     typedef int T;                  // The type of the values that the RVs can take on
     typedef DiscreteTable<T> DT;    // DT now is a short-hand for DiscreteTable<int>
+    typedef RandomVariable RV;
     double defprob = 0.0;           // Any unspecified probs will default to this.
     rcptr< vector<T> > locationDom (     // Domain location of Wumpus: 0 to 24 (5x5 grid)
         new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
@@ -89,35 +90,38 @@ int main(int, char *argv[]) {
     // Implement the factors
     // Wumpus transition factor: p(W_t | W_{t-1})
 
-    DT transitionFactor(W_rvs[t], W_rvs[t-1], defprob); // 25 x 25 factor for transition
-    int width = 5; // Grid width
+    for (int t = 0; t < T_max; t++) {
+        DT transitionFactor(W_rvs[t-1], W_rvs[t], defprob); // 25 x 25 factor for transition
+        int width = 5; // Grid width
 
-    for (int i = 0; i < 25; i++) {
-      // Convert cell index to (x, y) coordinates
-      int x = i % width; // x-coordinate
-      int y = i / width; // y-coordinate
-      double stay_prob = 0.0; // Probability of wumpus staying in the same cell
+        for (int i = 0; i < 25; i++) {
+          // Convert cell index to (x, y) coordinates
+          int x = i % width; // x-coordinate
+          int y = i / width; // y-coordinate
+          double stay_prob = 0.0; // Probability of wumpus staying in the same cell
 
-      // Define possible grid moves (up, down, left, right)
-      int dx[] = {0, 0, -1, 1};
-      int dy[] = {1, -1, 0, 0};
+          // Define possible grid moves (up, down, left, right)
+          int dx[] = {0, 0, -1, 1};
+          int dy[] = {1, -1, 0, 0};
 
-      for (int move = 0; move < 4; move++) {
-        int new_x = x + dx[move]; // wumpus new x-coordinate
-        int new_y = y + dy[move]; // wumpus new y-coordinate
+          for (int move = 0; move < 4; move++) {
+            int new_x = x + dx[move]; // wumpus new x-coordinate
+            int new_y = y + dy[move]; // wumpus new y-coordinate
 
-        if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
-          // Valid transition 
-          int new_i = new_y * width + new_x; // Convert back to cell index
-          transitionFactor({new_i, i}) = 0.25; //////// [] OR () ALSO from to transitin table???
-        } else {
-          // Invalid transition
-          stay_prob += 0.25; // Accumulate probability of staying in the same cell
+            if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
+              // Valid transition 
+              int new_i = new_y * width + new_x; // Convert back to cell index
+              transitionFactor({i, new_i}) = 0.25; 
+            } else {
+              // Invalid transition
+              stay_prob += 0.25; // Accumulate probability of staying in the same cell
+            }
+          } 
+          transitionFactor({i, i}) = stay_prob; // Probability of wumpus staying in the same cell
         }
-      }
-      transitionFactor[{i, i}] = stay_prob; // Probability of wumpus staying in the same cell
     }
 
+    std::cout << __FILE__ << __LINE__ << ": " << transitionFactor << std::endl;
  
     return 0; 
   } // try
