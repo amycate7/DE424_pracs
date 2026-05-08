@@ -37,3 +37,6 @@ target_link_libraries(week5_Q2 emdw)
 
 add_executable(week7_Q1 week7_Q1.cc)
 target_link_libraries(week7_Q1 emdw)
+
+add_executable(wumpus1 wumpus1.cc)
+target_link_libraries(wumpus1 emdw)
