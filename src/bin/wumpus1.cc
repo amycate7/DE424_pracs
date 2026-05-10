@@ -62,8 +62,8 @@ int main(int, char *argv[]) {
 
     double defprob = 0.0; // Any unspecified probs will default to this.
     int T_max = 10; // Number of timesteps
-    double pw = 0.95 // Probability of detection if wumpus is present
-    double pc = 0.05 // Probability of detection if wumpus is not present - clutter measurement
+    double pw = 0.95; // Probability of detection if wumpus is present
+    double pc = 0.05; // Probability of detection if wumpus is not present - clutter measurement
 
     rcptr< vector<T> > locationDom (     // Domain location of Wumpus: 0 to 24 (5x5 grid)
         new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
@@ -135,20 +135,53 @@ int main(int, char *argv[]) {
       );
 
       transitionFactors.push_back(ptrTransition);
-      cout << "Created transition factor for t=" << t << endl;
-      cout << *ptrTransition << endl;
-
-      // Wumpus Detection factors p(D_loc^t|W^t)
-      for (int t = 0; t < T_max; t++) {
-        int W_curr = W_rvs[t]; // Current wumpus location
-
-
-      } // end of outer time step loop
-
-
+      //cout << "Created transition factor for t=" << t << endl;
+      //cout << *ptrTransition << endl;
     }
-     
+      
+    // Wumpus Detection factors p(D_loc^t|W^t)
+    vector<rcptr<Factor>> detectionFactors; // Vector of pointers pointing to detection factors for each time step
 
+
+    for (int t = 0; t < T_max; t++) {
+      int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
+
+      // loc is the location of the specific cell we are building a factor for
+      for (int loc = 0; loc < num_cells; loc++) {
+        int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
+        map<vector<T>, FProb> detectionProbs;
+
+        // w_pos is the latent position of the wumpus 
+        for (int w_pos = 0; w_pos < num_cells; w_pos++){
+          if (w_pos == loc) {
+            // Detection location is equal to the wumpus position
+            detectionProbs[{1, w_pos}] = pw; // Detection
+            detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
+          } else {
+            detectionProbs[{1, w_pos}] = pc; // Clutter 
+            detectionProbs[{0, w_pos}] = 1.0 - pc; // No detection
+          }
+        } // end of wumpus location loop
+        
+        rcptr<Factor> ptrDetections = uniqptr<DT>(
+          new DT(
+            {D_curr, W_curr},
+            {binDom, locationDom},
+            defprob,
+            detectionProbs
+          )
+        );
+
+        detectionFactors.push_back(ptrDetections);
+        cout << "Created detection factor for t =" << t << " and cell =" << loc <<endl;
+        cout << *ptrDetections << endl;
+
+      } // end of grid location loop
+
+    } // end of outer time step loop
+
+    
+     
 
     return 0; 
   } // try
