@@ -49,80 +49,90 @@ int main(int, char *argv[]) {
 
   try {
 
-    //*********************************************************
-    // Some random generator seeding. Just keep this as is
-    //*********************************************************
-
+    // Random seeding
     unsigned seedVal = emdw::randomEngine.getSeedVal();
     cout <<  seedVal << endl;
     emdw::randomEngine.setSeedVal(seedVal);
 
-    //*********************************************************
-    // Predefine some types and constants
-    //*********************************************************
+    // Types and domains
+    typedef int T;                  
+    typedef DiscreteTable<T> DT; // DT now is a short-hand for DiscreteTable<int>
 
-    typedef int T;                  // The type of the values that the RVs can take on
-    typedef DiscreteTable<T> DT;    // DT now is a short-hand for DiscreteTable<int>
-    typedef RandomVariable RV;
-    double defprob = 0.0;           // Any unspecified probs will default to this.
+    double defprob = 0.0; // Any unspecified probs will default to this.
+    int T_max = 10; // Number of timesteps
+
     rcptr< vector<T> > locationDom (     // Domain location of Wumpus: 0 to 24 (5x5 grid)
         new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
     rcptr< vector<T> > binDom (     // Binary RV: detection D of Wumpus: 0 (no detection), 1 (detection)
         new vector<T>{0,1});
-    int T_max = 10; // Number of timesteps 
+ 
+    // Define the RVS
+    vector<T> W_rvs(T_max); // Vector of ints to store wumpus location for each time step (instead of using enum)
+    //vector<vector<RV>> D_rvs(T_max, vector<RV>(25)); // Vector to store detection RVs for each location and timestep
 
-    //*********************************************************
-    // Define the RVs
-    //*********************************************************
-
-    vector<RV> W_rvs(T_max); // Vector to store Wumpus location for each timestep
-    vector<vector<RV>> D_rvs(T_max, vector<RV>(25)); // Vector to store detection RVs for each location and timestep
-
-    // Initialise the RVs
     int num_cells = 25; // 5x5 grid
     for (int t = 0; t < T_max; t++) {
-        W_rvs[t] = RV(locationDom); // Wumpus location at time t
-        for (int loc = 0; loc < num_cells; loc++) {
-            D_rvs[t][loc] = RV(binDom); // Detection of Wumpus at location loc and time t
-        }
+      W_rvs[t] = t; // ID for W_t is simply t
+        // for (int loc = 0; loc < num_cells; loc++) {
+        //     D_rvs[t][loc] = RV(binDom); // Detection of Wumpus at location loc and time t
+        // }
     }
 
     // Implement the factors
     // Wumpus transition factor: p(W_t | W_{t-1})
+    vector<rcptr<Factor>> transitionFactors; // Vector to store our transition factor pointers for every time step
 
-    for (int t = 0; t < T_max; t++) {
-        DT transitionFactor(W_rvs[t-1], W_rvs[t], defprob); // 25 x 25 factor for transition
-        int width = 5; // Grid width
+    for (int t = 1; t < T_max; t++) {
+      int W_curr = W_rvs[t];
+      int W_prev = W_rvs[t-1];
 
-        for (int i = 0; i < 25; i++) {
-          // Convert cell index to (x, y) coordinates
-          int x = i % width; // x-coordinate
-          int y = i / width; // y-coordinate
-          double stay_prob = 0.0; // Probability of wumpus staying in the same cell
+      map<vector<T>, FProb> transitionProbs;
+      int width = 5; // Grid width
+      
+      // i is the index of W_prev
+      for (int i = 0; i < num_cells; i++) {
+        // Convert cell index to (x, y) coordinates
+        int x = i % width; // x-coordinate
+        int y = i / width; // y-coordinate
+        double stay_prob = 0.0; // Probability of wumpus staying in the same cell
 
-          // Define possible grid moves (up, down, left, right)
-          int dx[] = {0, 0, -1, 1};
-          int dy[] = {1, -1, 0, 0};
+        // Define possible grid moves (up, down, left, right)
+        int dx[] = {0, 0, -1, 1};
+        int dy[] = {1, -1, 0, 0};
 
-          for (int move = 0; move < 4; move++) {
-            int new_x = x + dx[move]; // wumpus new x-coordinate
-            int new_y = y + dy[move]; // wumpus new y-coordinate
+        for (int move = 0; move < 4; move++) {
+          int new_x = x + dx[move]; // wumpus new x-coordinate
+          int new_y = y + dy[move]; // wumpus new y-coordinate
 
-            if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
-              // Valid transition 
-              int new_i = new_y * width + new_x; // Convert back to cell index
-              transitionFactor({i, new_i}) = 0.25; 
-            } else {
-              // Invalid transition
-              stay_prob += 0.25; // Accumulate probability of staying in the same cell
-            }
-          } 
-          transitionFactor({i, i}) = stay_prob; // Probability of wumpus staying in the same cell
-        }
+          if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
+            // Valid transition 
+            int new_i = new_y * width + new_x; // Convert back to cell index
+            transitionProbs[{i, new_i}] = 0.25; 
+          } else {
+            // Invalid transition
+            stay_prob += 0.25; // Accumulate probability of staying in the same cell
+          }
+        } 
+        transitionProbs[{i, i}] = stay_prob;// Probability of wumpus staying in the same cell
+      }
+      
+      rcptr<Factor> ptrTransition = uniqptr<DT>(
+        new DT(
+          {W_prev, W_curr},           // Variable IDs
+          {locationDom, locationDom}, // Their domains
+          defprob,
+          transitionProbs             // Sparse probability map
+        )
+      );
+
+      transitionFactors.push_back(ptrTransition);
+      cout << "Created transition factor for t=" << t << endl;
+      cout << *ptrTransition << endl;
+
     }
+     
 
-    std::cout << __FILE__ << __LINE__ << ": " << transitionFactor << std::endl;
- 
+
     return 0; 
   } // try
 
