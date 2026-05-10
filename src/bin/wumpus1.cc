@@ -73,13 +73,20 @@ int main(int, char *argv[]) {
         new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
     rcptr< vector<T> > binDom ( // Binary RV: detection D of Wumpus: 0 (no detection), 1 (detection)
         new vector<T>{0,1});
- 
+
+    // Create MAP operators 
+    rcptr<Marginalizer> margPtr = uniqptr<Marginalizer>(new DiscreteTable_MaxMarginalize<T>);
+    rcptr<InplaceNormalizer> iNormPtr = uniqptr<InplaceNormalizer>(new DiscreteTable_InplaceMaxNormalize<T>);
+    rcptr<Normalizer> normPtr = uniqptr<Normalizer>(new DiscreteTable_MaxNormalize<T>);
+    double margin = 0.0;
+    double floor = 0.0;
+
     // =====================================
     // Define the RVS
     // =====================================
     vector<T> W_rvs(T_max); // Vector of ints to store wumpus location for each time step (instead of using enum)
     vector<vector<T>> D_rvs(T_max, vector<T>(25)); // Vector to store detection RVs for each location and timestep
-    cout << "Current working directory: " << fs::current_path() << endl;
+    
 
     int num_cells = 25; // 5x5 grid
     for (int t = 0; t < T_max; t++) {
@@ -135,7 +142,9 @@ int main(int, char *argv[]) {
           {W_prev, W_curr},           // Variable IDs
           {locationDom, locationDom}, // Their domains
           defprob,
-          transitionProbs             // Sparse probability map
+          transitionProbs,            // Sparse probability map
+          margin, floor, false,       // Extra arguments for MAP    
+          margPtr, iNormPtr, normPtr   
         )
       );
 
@@ -173,7 +182,9 @@ int main(int, char *argv[]) {
             {D_curr, W_curr},
             {binDom, locationDom},
             defprob,
-            detectionProbs
+            detectionProbs,
+            margin, floor, false,     // Extra arguments for MAP 
+            margPtr, iNormPtr, normPtr
           )
         );
 
@@ -243,10 +254,33 @@ int main(int, char *argv[]) {
     unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ);
     cout << "Sent " << nMsgs << " messages\n";
 
-    // Inferred wumpus trajectory
+    // Inferred wumpus trajectory using MAP inference
     for (int t = 0; t < T_max; t++) {
       rcptr<Factor> qPtr = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
-      std::cout << "Time " << t << ": " << *qPtr << std::endl;
+
+      cout << "Extract factor " << (*qPtr)(0) << endl;
+
+      double max_likelihood = -1.0;
+      int best_cell = -1;
+
+      // Loop through each cell in grid to determine most likely cell position
+      // for (int cell = 0; cell < num_cells; cell++) {
+      //   rcptr<DT> dtPtr = dynamic_pointer_cast<DT>(qPtr);
+      //   if (dtPtr) {
+            
+      //       double likelihood = dtPtr->potentialAt({cell});
+            
+      //       if (likelihood > max_likelihood) {
+      //           max_likelihood = likelihood;
+      //           best_cell = cell;
+      //       }
+      //   }       
+
+      // } 
+
+      // cout << "Time " << t << ": Wumpus is likely at cell " << best_cell 
+      //    << " (Likelihood: " << max_likelihood << ")" << endl;
+
     }
      
 
