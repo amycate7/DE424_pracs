@@ -25,9 +25,13 @@
 #include <algorithm>
 #include <limits>
 #include <random>
+#include <fstream> // For file reading
+#include <iomanip> // For formatting file names
+#include <filesystem>
 
 using namespace std;
 using namespace emdw;
+namespace fs = std::filesystem;
 
 //##################################################################
 // Some example code. To compile this, go to the emdw/build
@@ -65,9 +69,9 @@ int main(int, char *argv[]) {
     double pw = 0.95; // Probability of detection if wumpus is present
     double pc = 0.05; // Probability of detection if wumpus is not present - clutter measurement
 
-    rcptr< vector<T> > locationDom (     // Domain location of Wumpus: 0 to 24 (5x5 grid)
+    rcptr< vector<T> > locationDom ( // Domain location of Wumpus: 0 to 24 (5x5 grid)
         new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
-    rcptr< vector<T> > binDom (     // Binary RV: detection D of Wumpus: 0 (no detection), 1 (detection)
+    rcptr< vector<T> > binDom ( // Binary RV: detection D of Wumpus: 0 (no detection), 1 (detection)
         new vector<T>{0,1});
  
     // =====================================
@@ -75,6 +79,7 @@ int main(int, char *argv[]) {
     // =====================================
     vector<T> W_rvs(T_max); // Vector of ints to store wumpus location for each time step (instead of using enum)
     vector<vector<T>> D_rvs(T_max, vector<T>(25)); // Vector to store detection RVs for each location and timestep
+    cout << "Current working directory: " << fs::current_path() << endl;
 
     int num_cells = 25; // 5x5 grid
     for (int t = 0; t < T_max; t++) {
@@ -173,14 +178,76 @@ int main(int, char *argv[]) {
         );
 
         detectionFactors.push_back(ptrDetections);
-        cout << "Created detection factor for t =" << t << " and cell =" << loc <<endl;
-        cout << *ptrDetections << endl;
+        //cout << "Created detection factor for t =" << t << " and cell =" << loc <<endl;
+        //cout << *ptrDetections << endl;
 
       } // end of grid location loop
-
     } // end of outer time step loop
 
-    
+    // =============================
+    // Construct cluster graph (should result in junction tree, therefore exact inference)
+    // =============================
+
+    // Create a vector container to hold all the factors of the model
+    vector<rcptr<Factor>> factorPtrs;
+
+    // Populate the vector
+    for (auto& ptr : transitionFactors) {
+      factorPtrs.push_back(ptr);
+    }
+
+    for (auto& ptr : detectionFactors) {
+      factorPtrs.push_back(ptr);
+    }
+
+    // Define uniform prior over W0???
+
+    // Create a map to contain all observed RV values
+    map<RVIdType, AnyType> obsv; 
+
+    // Load in evidence
+    for (int t = 0; t < T_max; t++) {
+      // First construct the file name (data_file000.txt etc...)
+      stringstream ss;
+      ss << "../src/data/data_file00" << t << ".txt";
+      string filename = ss.str();
+
+      ifstream dataFile(filename);
+
+      if (!dataFile.is_open()) {
+        cerr << "Error: Could not open " << filename << endl;
+        continue;
+      }
+
+      // Read detection values from the file for timestep t (location tracks the cell)
+      for (int loc = 0; loc < num_cells; loc++) {
+        int detectionVal;
+        // Attempt to read file into variable and check if the operation is successful
+        if (dataFile >> detectionVal) {
+          int rvID = D_rvs[t][loc]; // Obtain RV id
+          obsv[rvID] = int(detectionVal); // Ensure its an int by casting
+        }
+      }
+
+      dataFile.close();
+      cout << "Successfully loaded evidence from " << filename << endl;
+    }
+
+    // Create a cluster graph
+    ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
+
+    // Perform inference
+    map<Idx2, rcptr<Factor> > msgs;
+    MessageQueue msgQ;
+
+    unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ);
+    cout << "Sent " << nMsgs << " messages\n";
+
+    // Inferred wumpus trajectory
+    for (int t = 0; t < T_max; t++) {
+      rcptr<Factor> qPtr = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
+      std::cout << "Time " << t << ": " << *qPtr << std::endl;
+    }
      
 
     return 0; 
