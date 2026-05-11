@@ -65,12 +65,19 @@ int main(int, char *argv[]) {
     typedef DiscreteTable<T> DT; // DT now is a short-hand for DiscreteTable<int>
 
     double defprob = 0.0; // Any unspecified probs will default to this.
-    int T_max = 10; // Number of timesteps
-    double pw = 0.95; // Probability of detection if wumpus is present
-    double pc = 0.05; // Probability of detection if wumpus is not present - clutter measurement
+    int T_max = 20; // Number of timesteps
+    double pw = 0.9; // Probability of detection if wumpus is present
+    double pc = 0.1; // Probability of detection if wumpus is not present - clutter measurement
+    int num_cells = 400; // 20x20 grid
+    int R = 20; // Num rows
+    int C = 20; // Num columns
 
-    rcptr< vector<T> > locationDom ( // Domain location of Wumpus: 0 to 24 (5x5 grid)
-        new vector<T>{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24});
+    // Domain location of Wumpus: 0 to 399 (20x20 grid) 
+    rcptr< vector<T> > locationDom(new vector<T>);
+    for (int i = 0; i < num_cells; i++) {
+      locationDom->push_back(i);
+    }
+
     rcptr< vector<T> > binDom ( // Binary RV: detection D of Wumpus: 0 (no detection), 1 (detection)
         new vector<T>{0,1});
 
@@ -85,16 +92,12 @@ int main(int, char *argv[]) {
     // Define the RVS
     // =====================================
     vector<T> W_rvs(T_max); // Vector of ints to store wumpus location for each time step (instead of using enum)
-    vector<vector<T>> D_rvs(T_max, vector<T>(25)); // Vector to store detection RVs for each location and timestep
+    vector<vector<T>> D_rvs(T_max, vector<T>(400)); // Vector to store detection RVs for each location and timestep
     
-
-    int num_cells = 25; // 5x5 grid
-    int R = 5; // Num rows
-    int C = 5; // Num columns
     for (int t = 0; t < T_max; t++) {
       W_rvs[t] = t; // ID for W_t is simply t
       for (int loc = 0; loc < num_cells; loc++) {
-        D_rvs[t][loc] = 10 + (t * 25) + loc; // Index detection RVs (check offset)
+        D_rvs[t][loc] = 20 + (t * 400) + loc; // Index detection RVs (check offset) TODO
       }
     }
 
@@ -110,7 +113,7 @@ int main(int, char *argv[]) {
       int W_prev = W_rvs[t-1];
 
       map<vector<T>, FProb> transitionProbs;
-      int width = 5; // Grid width
+      int width = 20; // Grid width
       
       // i is the index of W_prev
       for (int i = 0; i < num_cells; i++) {
@@ -222,7 +225,8 @@ int main(int, char *argv[]) {
     for (int t = 0; t < T_max; t++) {
       // First construct the file name (data_file000.txt etc...)
       stringstream ss;
-      ss << "../src/dataset1/data_file00" << t << ".txt";
+      ss << "../src/dataset2/data_file" 
+         << setfill('0') << setw(3) << t << ".txt"; // Ensures three digit padding (fills with zeroes)
       string filename = ss.str();
 
       ifstream dataFile(filename);
