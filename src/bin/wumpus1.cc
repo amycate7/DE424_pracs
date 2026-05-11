@@ -89,6 +89,8 @@ int main(int, char *argv[]) {
     
 
     int num_cells = 25; // 5x5 grid
+    int R = 5; // Num rows
+    int C = 5; // Num columns
     for (int t = 0; t < T_max; t++) {
       W_rvs[t] = t; // ID for W_t is simply t
       for (int loc = 0; loc < num_cells; loc++) {
@@ -256,30 +258,28 @@ int main(int, char *argv[]) {
 
     // Inferred wumpus trajectory using MAP inference
     for (int t = 0; t < T_max; t++) {
-      rcptr<Factor> qPtr = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
-
-      cout << "Extract factor " << (*qPtr)(0) << endl;
+      rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
 
       double max_likelihood = -1.0;
       int best_cell = -1;
 
-      // Loop through each cell in grid to determine most likely cell position
-      // for (int cell = 0; cell < num_cells; cell++) {
-      //   rcptr<DT> dtPtr = dynamic_pointer_cast<DT>(qPtr);
-      //   if (dtPtr) {
-            
-      //       double likelihood = dtPtr->potentialAt({cell});
-            
-      //       if (likelihood > max_likelihood) {
-      //           max_likelihood = likelihood;
-      //           best_cell = cell;
-      //       }
-      //   }       
+      for (int row = 0; row < R; row++) {
+        for (int col = 0; col < C; col++) {
+          // Calculate the cell index and extract likelihood
+          unsigned int cell_idx = row * C + col;
+          double likelihood = beliefT->potentialAt({W_rvs[t]}, {(T)cell_idx});
 
-      // } 
+          if (likelihood > max_likelihood) {
+            max_likelihood = likelihood;
+            best_cell = cell_idx;
+          }
 
-      // cout << "Time " << t << ": Wumpus is likely at cell " << best_cell 
-      //    << " (Likelihood: " << max_likelihood << ")" << endl;
+        }
+      }
+
+    // Convert the bestCell index back to (row, col) for clear output
+    cout << "Time " << t << ": Wumpus at [" << best_cell % C << ", " << best_cell / C 
+         << "] (Cell ID: " << best_cell << ", Likelihood: " << max_likelihood << ")" << endl;
 
     }
      
