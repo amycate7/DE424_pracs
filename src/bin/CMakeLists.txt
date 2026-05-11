@@ -40,3 +40,6 @@ target_link_libraries(week7_Q1 emdw)
 
 add_executable(wumpus1 wumpus1.cc)
 target_link_libraries(wumpus1 emdw)
+
+add_executable(wumpus2 wumpus2.cc)
+target_link_libraries(wumpus2 emdw)
