@@ -263,43 +263,46 @@ int main(int, char *argv[]) {
     // ================================================
     // Inferred wumpus trajectory using MAP inference
     // ================================================
-    for (int t = 0; t < T_max; t++) {
-      rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
+        // Save MAP results to a .txt for further model performance evaluation
+    ofstream outFile("wumpus_location2.txt");
 
-      double max_likelihood = -1.0;
-      int best_cell = -1;
+    if (!outFile.is_open()) {
+      cerr << "Error: Could not create wumpus_location2.txt" << endl;
+    } else {
+      cout << "Inferred MAP trajectory saved to file wumpus_location2.txt" << endl;
+      
+      for (int t = 0; t < T_max; t++) {
+        rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
 
-      for (int row = 0; row < R; row++) {
-        for (int col = 0; col < C; col++) {
-          // Calculate the cell index and extract likelihood
-          unsigned int cell_idx = row * C + col;
-          double likelihood = beliefT->potentialAt({W_rvs[t]}, {(T)cell_idx});
+        double max_likelihood = -1.0;
+        int best_cell = -1;
 
-          if (likelihood > max_likelihood) {
-            max_likelihood = likelihood;
-            best_cell = cell_idx;
+        for (int row = 0; row < R; row++) {
+          for (int col = 0; col < C; col++) {
+            // Calculate the cell index and extract likelihood
+            unsigned int cell_idx = row * C + col;
+            double likelihood = beliefT->potentialAt({W_rvs[t]}, {(T)cell_idx});
+
+            if (likelihood > max_likelihood) {
+              max_likelihood = likelihood;
+              best_cell = cell_idx;
+            }
+
           }
-
         }
+
+        // Convert cell index back to x and y coordinates
+        int x = best_cell % C;
+        int y = best_cell / C;
+
+        outFile << x << " " << y << endl;
+
+      // Convert the bestCell index back to (row, col) for clear output
+      cout << "Time " << t << ": Wumpus at [" << x << ", " << y 
+          << "] (Cell ID: " << best_cell << ", Likelihood: " << max_likelihood << ")" << endl;
+
       }
-
-    // Convert the bestCell index back to (row, col) for clear output
-    cout << "Time " << t << ": Wumpus at [" << best_cell % C << ", " << best_cell / C 
-         << "] (Cell ID: " << best_cell << ", Likelihood: " << max_likelihood << ")" << endl;
-
     }
-
-    // ================================
-    // Evaluate performance
-    // ================================
-
-    // Qualitative performance
-
-
-
-
-    // Quantitative performance
-     
 
     return 0; 
   } // try

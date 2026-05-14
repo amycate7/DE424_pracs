@@ -1,3 +1,4 @@
+# %%
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
@@ -26,7 +27,7 @@ actual_path   = np.loadtxt(actual_path_file)
 
 def load_detections(t):
   # Load the 5x5 binary detection grid from dataset 1 
-  filename = os.path.join(DATA_DIR, f"data_file00{t}.txt")
+  filename = os.path.join(dataset_dir, f"data_file00{t}.txt")
   return np.loadtxt(filename).reshape(GRID_SIZE, GRID_SIZE)
 
 fig, ax = plt.subplots(figsize=(7, 7))
@@ -38,7 +39,7 @@ def update(t):
   det_grid = load_detections(t)
 
   # Draw detections (blue cells)
-  cmap = plt.cm.colors.ListedColorMap(['white', 'blue'])
+  cmap = plt.cm.colors.ListedColormap(['white', 'blue'])
   ax.imshow(det_grid, cmap = cmap, origin = 'upper', extent=[0, 5, 5, 0])
 
   # Draw grid lines
@@ -48,24 +49,26 @@ def update(t):
 
   # Plot wumpus actual location (yellow diamond)
   act_x, act_y = actual_path[t]
-  ax.scatter(act_x + 0.5, act_y + 0.5, marker='D', color='yellow', s=300, 
-               label='Actual Wumpus', edgecolors='black', zorder=5)
+  ax.scatter(act_x + 0.5, act_y + 0.5, marker='D', color='yellow', s=600, 
+               label='Actual', edgecolors='black', zorder=5)
 
   # Plot inferred wumpus location (red circle)
   inf_x, inf_y = inferred_path[t]
-  ax.scatter(inf_x + 0.5, inf_y + 0.5, marker='o', color='red', s=200, 
-               label='Inferred (MAP)', alpha=0.8, zorder=6) 
-
+  ax.scatter(inf_x + 0.5, inf_y + 0.5, marker='o', color='red', s=400, 
+               label='Inferred', alpha=0.8, edgecolors='darkred', zorder=6)
   # Labels and Formatting
-  ax.set_title(f"Wumpus Tracking: Time Step {t}", fontsize=14)
+  ax.set_title(f"Wumpus Location Tracking: Time Step {t}", fontsize=14)
   ax.set_xlabel("X coordinate")
   ax.set_ylabel("Y coordinate")
-  ax.legend(loc='upper right', bbox_to_anchor=(1.25, 1))
+  ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0, fontsize=10, markerscale=0.5, scatterpoints=1, frameon=True, edgecolor='gray')
     
   # Ensure (0,0) is top-left 
   ax.set_xlim(0, 5)
   ax.set_ylim(5, 0)
 
-# Display animation
+  fig.tight_layout() # Ensures that the legend isn't cropped out of gif
+
+# Save to a file
 wumpus_trajectory = animation.FuncAnimation(fig, update, frames = T_MAX, repeat = True)
-plt.show()
+wumpus_trajectory.save('wumpus_tracking.gif', writer='pillow', fps=2)
+print("Animation saved to wumpus_tracking.gif")

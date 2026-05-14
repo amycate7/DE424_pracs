@@ -248,6 +248,7 @@ int main(int, char *argv[]) {
 
     // Create a cluster graph
     ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
+    cg.exportToGraphViz("wumpus_cg");
 
     // Perform inference
     map<Idx2, rcptr<Factor> > msgs;
