@@ -200,8 +200,25 @@ int main(int, char *argv[]) {
       //cout << *ptrTransition << endl;
     }
 
-    // Define a helper function to build the detection factor for different iterations in the loop
-    void buildDetectionFactorSum(double current_pw, double current_pc) {
+    // Build helper detection factor for MAX
+    void buildDetectionFactorMax(double current_pw, double current_pc) {
+
+    }
+
+    // ============================
+    // EM Algorithm
+    // ============================
+    for (int iter = 0; iter < max_iters && delta > epsilon; iter++) {
+      double old_pw = pw;
+      double old_pc = pc;
+      vector<rcptr<Factor>> factorPtrs;
+
+      // Push transition factors onto factorPtrs
+      for (auto& ptr : transitionFactors) {
+        factorPtrs.push_back(ptr);
+      }
+
+      // E-step: Construct detection factors based on current param estimates and perform inference
       // Wumpus Detection factors p(D_loc^t|W^t)
       for (int t = 0; t < T_max; t++) {
         int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
@@ -239,78 +256,15 @@ int main(int, char *argv[]) {
         } // end of grid location loop
       } // end of outer time step loop
 
-    } // End of function
-
-    // Build helper detection factor for MAX
-    void buildDetectionFactorMax(double current_pw, double current_pc) {
-      vector<rcptr<Factor>> detectionFactors; // Vector of pointers pointing to detection factors for each time step
-      for (int t = 0; t < T_max; t++) {
-        int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
-
-        // loc is the location of the specific cell we are building a factor for
-        for (int loc = 0; loc < num_cells; loc++) {
-          int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
-          map<vector<T>, FProb> detectionProbs;
-
-          // w_pos is the latent position of the wumpus 
-          for (int w_pos = 0; w_pos < num_cells; w_pos++){
-            if (w_pos == loc) {
-              // Detection location is equal to the wumpus position
-              detectionProbs[{1, w_pos}] = pw; // Detection
-              detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
-            } else {
-              detectionProbs[{1, w_pos}] = pc; // Clutter 
-              detectionProbs[{0, w_pos}] = 1.0 - pc; // No detection
-            }
-          } // end of wumpus location loop
-          
-          rcptr<Factor> ptrDetections = uniqptr<DT>(
-            new DT(
-              {D_curr, W_curr},
-              {binDom, locationDom},
-              defprob,
-              detectionProbs,
-              margin, floor, false,     // Extra arguments for MAP 
-              margPtr, iNormPtr, normPtr
-            )
-          );
-
-          detectionFactors.push_back(ptrDetections);
-
-        } // end of grid location loop
-      } // end of outer time step loop
-    }
-
-    // ============================
-    // EM Algorithm
-    // ============================
-    for (int iter = 0; iter < max_iters && delta > epsilon; iter++) {
-      double old_pw = pw;
-      double old_pc = pc;
-          
-      // Create a vector container to hold all the factors of the model
-      vector<rcptr<Factor>> factorPtrs;
-      // Push transition factors onto factorPtrs
-      for (auto& ptr : transitionFactors) {
-        factorPtrs.push_back(ptr);
-      }
-
-      // E-step: Construct detection factors based on current param estimates and perform inference
-      buildDetectionFactorSum(old_pw, old_pc);
-
       //Construct CG
       ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
-
-      // Message passing
       map<Idx2, rcptr<Factor> > msgs;
       MessageQueue msgQ;
       unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ); // CG is calibrated after this pass
-      cout << "Sent " << nMsgs << " messages\n";
 
       // M-step: param updates
       double pw_num = 0.0;
       double pc_num = 0.0;
-
       for (int t = 0; t < T_max; t++) {
         rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
         int St = 0; // total detections at time t
@@ -319,41 +273,126 @@ int main(int, char *argv[]) {
         }
 
         for (int i = 0; i < num_cells; i++) {
-          double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i}); // Check I dont think it will work
-
-          if ((int)obsv[D_rvs[t][i]] == 1) {
-            pw_num += gamma_ti; // Increment number of correct detection
-          }
-          pc_num += gamma_ti * (St - ((int)obsv[D_rvs[t][i]] == 1 ? 1 : 0)); // Increment num incorrect detections
+            double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i});
+            int Y_ti = ((int)obsv[D_rvs[t][i]] == 1);
+            if (Y_ti) pw_num += gamma_ti;
+            pc_num += gamma_ti * (St - Y_ti);
         }
       }
-
       pw = pw_num / T_max; // Updated pw
       pc = pc_num / (T_max * (num_cells - 1)); // Updated pc
-
       delta = abs(pw - old_pw) + abs(pc - old_pc);
       cout << "Iteration " << iter << ": pw=" << pw << ", pc=" << pc << endl;
     }  
 
     // After params have converged, run one more pass with MAP inference to obtain the trajectory
-    // Create a cluster graph
-
     // Create a vector container to hold all the factors of the model
-    vector<rcptr<Factor>> factorPtrs;
+    vector<rcptr<Factor>> finalPtrs;
+
+    // Rebuild transition factor with margPtr (MAX)
+    vector<rcptr<Factor>> transitionFactors; // Vector to store our transition factor pointers
+
+    for (int t = 1; t < T_max; t++) {
+      int W_curr = W_rvs[t];
+      int W_prev = W_rvs[t-1];
+
+      map<vector<T>, FProb> transitionProbs;
+      int width = 5; // Grid width
+      
+      // i is the index of W_prev
+      for (int i = 0; i < num_cells; i++) {
+        // Convert cell index to (x, y) coordinates
+        int x = i % width; // x-coordinate
+        int y = i / width; // y-coordinate
+        double stay_prob = 0.0; // Probability of wumpus staying in the same cell
+
+        // Define possible grid moves (up, down, left, right)
+        int dx[] = {0, 0, -1, 1};
+        int dy[] = {1, -1, 0, 0};
+
+        for (int move = 0; move < 4; move++) {
+          int new_x = x + dx[move]; // wumpus new x-coordinate
+          int new_y = y + dy[move]; // wumpus new y-coordinate
+
+          if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
+            // Valid transition 
+            int new_i = new_y * width + new_x; // Convert back to cell index
+            transitionProbs[{i, new_i}] = 0.25; 
+          } else {
+            // Invalid transition
+            stay_prob += 0.25; // Accumulate probability of staying in the same cell
+          }
+        } 
+        transitionProbs[{i, i}] = stay_prob;// Probability of wumpus staying in the same cell
+      }
+      
+      rcptr<Factor> ptrTransition = uniqptr<DT>(
+        new DT(
+          {W_prev, W_curr},           // Variable IDs
+          {locationDom, locationDom}, // Their domains
+          defprob,
+          transitionProbs,            // Sparse probability map
+          margin, floor, false,       // Extra arguments for MAP    
+          margPtr, iNormPtr, normPtr   
+        )
+      );
+
+      transitionFactors.push_back(ptrTransition);
+      //cout << "Created transition factor for t=" << t << endl;
+      //cout << *ptrTransition << endl;
+    }
+
     // Push transition factors onto factorPtrs
     for (auto& ptr : transitionFactors) {
-      factorPtrs.push_back(ptr);
+      finalPtrs.push_back(ptr);
     }
     
-    buildDetectionFactorMax(pw, pc);
-    ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
+    // Build Detection factors with MAX
+    vector<rcptr<Factor>> detectionFactors; // Vector of pointers pointing to detection factors for each time step
+    for (int t = 0; t < T_max; t++) {
+      int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
 
-    // Perform inference
-    map<Idx2, rcptr<Factor> > msgs;
-    MessageQueue msgQ;
+      // loc is the location of the specific cell we are building a factor for
+      for (int loc = 0; loc < num_cells; loc++) {
+        int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
+        map<vector<T>, FProb> detectionProbs;
 
-    unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ);
-    cout << "Sent " << nMsgs << " messages\n";
+        // w_pos is the latent position of the wumpus 
+        for (int w_pos = 0; w_pos < num_cells; w_pos++){
+          if (w_pos == loc) {
+            // Detection location is equal to the wumpus position
+            detectionProbs[{1, w_pos}] = pw; // Detection
+            detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
+          } else {
+            detectionProbs[{1, w_pos}] = pc; // Clutter 
+            detectionProbs[{0, w_pos}] = 1.0 - pc; // No detection
+          }
+        } // end of wumpus location loop
+          
+        rcptr<Factor> ptrDetections = uniqptr<DT>(
+          new DT(
+            {D_curr, W_curr},
+            {binDom, locationDom},
+            defprob,
+            detectionProbs,
+            margin, floor, false,     // Extra arguments for MAP 
+            margPtr, iNormPtr, normPtr
+          )
+        );
+
+        detectionFactors.push_back(ptrDetections);
+
+      } // end of grid location loop
+    } // end of outer time step loop
+
+    for (auto& ptr : detectionFactors) {
+      finalPtrs.push_back(ptr);
+    }
+
+    ClusterGraph cgFinal(ClusterGraph::BETHE, finalPtrs, obsv);
+    map<Idx2, rcptr<Factor>> finalMsgs;
+    MessageQueue finalQ;
+    unsigned nMsgs = loopyBP_CG(cgFinal, finalMsgs, finalQ);
 
     // ================================================
     // Inferred wumpus trajectory using MAP inference
@@ -367,7 +406,7 @@ int main(int, char *argv[]) {
       cout << "Inferred MAP trajectory saved to file wumpus_location3.txt" << endl;
       
       for (int t = 0; t < T_max; t++) {
-        rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
+        rcptr<Factor> beliefT = queryLBP_CG(cgFinal, msgs, {W_rvs[t]})->normalize(); // Query the graph
 
         double max_likelihood = -1.0;
         int best_cell = -1;
