@@ -191,7 +191,7 @@ int main(int, char *argv[]) {
           defprob,
           transitionProbs,            // Sparse probability map
           margin, floor, false,       // Extra arguments for MAP    
-          margPtr, iNormPtr, normPtr   
+          sumMarg, sumINorm, sumNorm   
         )
       );
 
@@ -200,21 +200,8 @@ int main(int, char *argv[]) {
       //cout << *ptrTransition << endl;
     }
 
-    // ============================
-    // EM Algorithm
-    // ============================
-    for (int iter = 0; iter < max_iters && delta > epsilon; iter++) {
-      double old_pw = pw;
-      double old_pc = pc;
-          
-      // Create a vector container to hold all the factors of the model
-      vector<rcptr<Factor>> factorPtrs;
-      // Push transition factors onto factorPtrs
-      for (auto& ptr : transitionFactors) {
-        factorPtrs.push_back(ptr);
-      }
-
-      // E-step: Construct detection factors based on current param estimates and perform inference
+    // Define a helper function to build the detection factor for different iterations in the loop
+    void buildDetectionFactorSum(double current_pw, double current_pc) {
       // Wumpus Detection factors p(D_loc^t|W^t)
       for (int t = 0; t < T_max; t++) {
         int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
@@ -228,11 +215,11 @@ int main(int, char *argv[]) {
           for (int w_pos = 0; w_pos < num_cells; w_pos++){
             if (w_pos == loc) {
               // Detection location is equal to the wumpus position
-              detectionProbs[{1, w_pos}] = old_old_pw; // Detection
-              detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
+              detectionProbs[{1, w_pos}] = current_pw; // Detection
+              detectionProbs[{0, w_pos}] = 1.0 - current_pw;  // Missed detection
             } else {
-              detectionProbs[{1, w_pos}] = old_pc; // Clutter 
-              detectionProbs[{0, w_pos}] = 1.0 - old_pc; // No detection
+              detectionProbs[{1, w_pos}] = current_pc; // Clutter 
+              detectionProbs[{0, w_pos}] = 1.0 - current_pc; // No detection
             }
           } // end of wumpus location loop
           
@@ -252,6 +239,65 @@ int main(int, char *argv[]) {
         } // end of grid location loop
       } // end of outer time step loop
 
+    } // End of function
+
+    // Build helper detection factor for MAX
+    void buildDetectionFactorMax(double current_pw, double current_pc) {
+      vector<rcptr<Factor>> detectionFactors; // Vector of pointers pointing to detection factors for each time step
+      for (int t = 0; t < T_max; t++) {
+        int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
+
+        // loc is the location of the specific cell we are building a factor for
+        for (int loc = 0; loc < num_cells; loc++) {
+          int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
+          map<vector<T>, FProb> detectionProbs;
+
+          // w_pos is the latent position of the wumpus 
+          for (int w_pos = 0; w_pos < num_cells; w_pos++){
+            if (w_pos == loc) {
+              // Detection location is equal to the wumpus position
+              detectionProbs[{1, w_pos}] = pw; // Detection
+              detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
+            } else {
+              detectionProbs[{1, w_pos}] = pc; // Clutter 
+              detectionProbs[{0, w_pos}] = 1.0 - pc; // No detection
+            }
+          } // end of wumpus location loop
+          
+          rcptr<Factor> ptrDetections = uniqptr<DT>(
+            new DT(
+              {D_curr, W_curr},
+              {binDom, locationDom},
+              defprob,
+              detectionProbs,
+              margin, floor, false,     // Extra arguments for MAP 
+              margPtr, iNormPtr, normPtr
+            )
+          );
+
+          detectionFactors.push_back(ptrDetections);
+
+        } // end of grid location loop
+      } // end of outer time step loop
+    }
+
+    // ============================
+    // EM Algorithm
+    // ============================
+    for (int iter = 0; iter < max_iters && delta > epsilon; iter++) {
+      double old_pw = pw;
+      double old_pc = pc;
+          
+      // Create a vector container to hold all the factors of the model
+      vector<rcptr<Factor>> factorPtrs;
+      // Push transition factors onto factorPtrs
+      for (auto& ptr : transitionFactors) {
+        factorPtrs.push_back(ptr);
+      }
+
+      // E-step: Construct detection factors based on current param estimates and perform inference
+      buildDetectionFactorSum(old_pw, old_pc);
+
       //Construct CG
       ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
 
@@ -267,28 +313,39 @@ int main(int, char *argv[]) {
 
       for (int t = 0; t < T_max; t++) {
         rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
-        int St = 0; total detections at time t
-        for (int loc = 0; loc < num_cells; loc++) St += obsv[loc]; // Check this
+        int St = 0; // total detections at time t
+        for (int loc = 0; loc < num_cells; loc++) {
+          if ((int)obsv[D_rvs[t][loc]] == 1) St++;
+        }
 
         for (int i = 0; i < num_cells; i++) {
           double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i}); // Check I dont think it will work
 
-          if (obsv[loc] == 1) {
-            pw_num += gamma_ti;
-            pc_num += gamma_ti * (St - obsv[loc]);
-
+          if ((int)obsv[D_rvs[t][i]] == 1) {
+            pw_num += gamma_ti; // Increment number of correct detection
           }
+          pc_num += gamma_ti * (St - ((int)obsv[D_rvs[t][i]] == 1 ? 1 : 0)); // Increment num incorrect detections
         }
-
-        pw = pw_num / T_max; // Updated pw
-        pc = pc_num / (T_max * (num_cells - 1)); // Updated pc
-
-        delta = abs(pw - old_pw) + abs(pc - old_pc);
-        cout << "Iteration " << iter << ": pw=" << pw << ", pc=" << pc << endl;
       }
 
-      // After params have converged, run one more pass with MAP inference to obtain the trajectory
-         // Create a cluster graph
+      pw = pw_num / T_max; // Updated pw
+      pc = pc_num / (T_max * (num_cells - 1)); // Updated pc
+
+      delta = abs(pw - old_pw) + abs(pc - old_pc);
+      cout << "Iteration " << iter << ": pw=" << pw << ", pc=" << pc << endl;
+    }  
+
+    // After params have converged, run one more pass with MAP inference to obtain the trajectory
+    // Create a cluster graph
+
+    // Create a vector container to hold all the factors of the model
+    vector<rcptr<Factor>> factorPtrs;
+    // Push transition factors onto factorPtrs
+    for (auto& ptr : transitionFactors) {
+      factorPtrs.push_back(ptr);
+    }
+    
+    buildDetectionFactorMax(pw, pc);
     ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
 
     // Perform inference
@@ -305,9 +362,9 @@ int main(int, char *argv[]) {
     ofstream outFile("wumpus_location3.txt");
 
     if (!outFile.is_open()) {
-      cerr << "Error: Could not create wumpus_location2.txt" << endl;
+      cerr << "Error: Could not create wumpus_location3.txt" << endl;
     } else {
-      cout << "Inferred MAP trajectory saved to file wumpus_location2.txt" << endl;
+      cout << "Inferred MAP trajectory saved to file wumpus_location3.txt" << endl;
       
       for (int t = 0; t < T_max; t++) {
         rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
