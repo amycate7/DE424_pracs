@@ -19,6 +19,13 @@ elif dataset_num == "2":
   inf_file = 'wumpus_location2.txt'
   traj_file = 'wumpus_trajectory2.txt' # Ground truth for D2
   d_dir = 'dataset2'
+elif dataset_num == "3":
+  GRID_SIZE =
+  T_MAX = 20
+  inf_file = 'wumpus_location3.txt'
+  traj_file = 'wumpus_trajectory3.txt'
+  d_dir = 'dataset3'
+
 
 print(f"Visualizing Dataset {dataset_num} (Grid: {GRID_SIZE}x{GRID_SIZE}, T: {T_MAX})")
 
