@@ -43,3 +43,6 @@ target_link_libraries(wumpus1 emdw)
 
 add_executable(wumpus2 wumpus2.cc)
 target_link_libraries(wumpus2 emdw)
+
+add_executable(wumpus3 wumpus3.cc)
+target_link_libraries(wumpus3 emdw)

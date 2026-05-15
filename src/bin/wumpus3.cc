@@ -66,11 +66,16 @@ int main(int, char *argv[]) {
 
     double defprob = 0.0; // Any unspecified probs will default to this.
     int T_max = 20; // Number of timesteps    
-    double pw = 0.7; // Initial estimates of pw
-    double pc = 0.1; // Initial estimates of pc
     int num_cells = 200; // 10x20 grid
     int R = 10; // Num rows
     int C = 20; // Num columns
+    
+    // Variable initialisation
+    double pw = 0.7; // Initial estimates of pw
+    double pc = 0.1; // Initial estimates of pc
+    double epsilon = 1e-5;
+    double delta = 1.0;
+    int max_iters = 30;
 
     // Domain location of Wumpus: 0 to 200 (10x20 grid) 
     rcptr< vector<T> > locationDom(new vector<T>);
@@ -99,6 +104,39 @@ int main(int, char *argv[]) {
       for (int loc = 0; loc < num_cells; loc++) {
         D_rvs[t][loc] = 20 + (t * 200) + loc;
       }
+    }
+
+    // ========================================================
+    // Data is preloaded so that we don't reload each iteration
+    // ========================================================
+    map<RVIdType, AnyType> obsv;
+
+    for (int t = 0; t < T_max; t++) {
+      // First construct the file name (data_file000.txt etc...)
+      stringstream ss;
+      ss << "../src/dataset3/data_file" 
+         << setfill('0') << setw(3) << t << ".txt"; // Ensures three digit padding (fills with zeroes)
+      string filename = ss.str();
+ 
+      ifstream dataFile(filename);
+
+      if (!dataFile.is_open()) {
+        cerr << "Error: Could not open " << filename << endl;
+        continue;
+      }
+
+      // Read detection values from the file for timestep t (location tracks the cell)
+      for (int loc = 0; loc < num_cells; loc++) {
+        int detectionVal;
+        // Attempt to read file into variable and check if the operation is successful
+        if (dataFile >> detectionVal) {
+          int rvID = D_rvs[t][loc]; // Obtain RV id
+          obsv[rvID] = int(detectionVal); // Ensure its an int by casting
+        }
+      }
+
+      dataFile.close();
+      cout << "Successfully loaded evidence from " << filename << endl;
     }
 
     // ====================================
@@ -213,41 +251,6 @@ int main(int, char *argv[]) {
 
     for (auto& ptr : detectionFactors) {
       factorPtrs.push_back(ptr);
-    }
-
-    // Define uniform prior over W0???
-
-    // Create a map to contain all observed RV values
-    map<RVIdType, AnyType> obsv; 
-
-    // Load in evidence
-    for (int t = 0; t < T_max; t++) {
-      // First construct the file name (data_file000.txt etc...)
-      stringstream ss;
-      ss << "../src/dataset3/data_file" 
-         << setfill('0') << setw(3) << t << ".txt"; // Ensures three digit padding (fills with zeroes)
-      string filename = ss.str();
- 
-
-      ifstream dataFile(filename);
-
-      if (!dataFile.is_open()) {
-        cerr << "Error: Could not open " << filename << endl;
-        continue;
-      }
-
-      // Read detection values from the file for timestep t (location tracks the cell)
-      for (int loc = 0; loc < num_cells; loc++) {
-        int detectionVal;
-        // Attempt to read file into variable and check if the operation is successful
-        if (dataFile >> detectionVal) {
-          int rvID = D_rvs[t][loc]; // Obtain RV id
-          obsv[rvID] = int(detectionVal); // Ensure its an int by casting
-        }
-      }
-
-      dataFile.close();
-      cout << "Successfully loaded evidence from " << filename << endl;
     }
 
     // Create a cluster graph
