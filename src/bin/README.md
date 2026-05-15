@@ -70,27 +70,27 @@ Accuracy, RMSE, and Mean Manhattan Distance (MMD) output to the terminal.
 --
 ### INSTALLATION AND SETUP FOR MARKING
 
-To ensure the project compiles correctly within the standard DE424 
-environment, please follow these placement instructions:
+To ensure the project compiles and executes correctly within the 
+standard DE424 environment, please follow these placement instructions:
 
-1. Copy the provided source files (wumpus1.cc, wumpus2.cc, wumpus3.cc) 
-   into your existing 'emdw/src/bin/' directory.
-2. Copy 'datasetplot.py' into the same 'emdw/src/bin/' directory.
-3. Ensure the 'dataset1', 'dataset2', 'dataset3', and 'groundtruth' 
-   folders are placed in 'emdw/src/' so that relative data paths 
-   remain valid. The data provided from StemLearn must be in these 
-   folders, named identically as they were provided.
-4. Update 'emdw/src/bin/CMakeLists.txt' by adding the following lines 
-   at the end:
+1. SOURCE FILES:
+   - Copy 'wumpus1.cc', 'wumpus2.cc', 'wumpus3.cc', and 'datasetplot.py' 
+     into the 'emdw/src/bin/' directory.
+   - Replace or update 'emdw/src/bin/CMakeLists.txt' with the provided 
+     version to include the new build targets.
 
-   add_executable(wumpus1 wumpus1.cc)
-   target_link_libraries(wumpus1 emdw)
+2. DATA FOLDERS (emdw/src/):
+   - Place 'dataset1', 'dataset2', and 'dataset3' folders in 'emdw/src/'. 
+     These folders must contain the original, unaltered detection data 
+     as downloaded from SunLearn.
+   - Place the 'groundtruth' folder in 'emdw/src/'.
 
-   add_executable(wumpus2 wumpus2.cc)
-   target_link_libraries(wumpus2 emdw)
+3. GROUND TRUTH NAMING CONVENTION:
+   - Ensure the ground truth files within 'emdw/src/groundtruth/' are 
+     named exactly as follows for the scripts to find them:
+     * wumpus_trajectory1.txt
+     * wumpus_trajectory2.txt
+     * wumpus_trajectory3.txt
 
-   add_executable(wumpus3 wumpus3.cc)
-   target_link_libraries(wumpus3 emdw)
-
-Once these files are in place, proceed with the standard build 
-instructions provided in Section 2.
+Once the directory structure is verified, proceed with the standard 
+build instructions provided in Section 2.
