@@ -260,9 +260,9 @@ int main(int, char *argv[]) {
 
         for (int i = 0; i < num_cells; i++) {
             double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i});
-            int Y_ti = ((int)obsv[D_rvs[t][i]] == 1) ? 1 : 0;
-            if (Y_ti) pw_num += gamma_ti;
-            pc_num += gamma_ti * (St - Y_ti);
+            int D_ti = ((int)obsv[D_rvs[t][i]] == 1) ? 1 : 0;
+            if (D_ti) pw_num += gamma_ti; // Accumulates the belief to pw if a sensor detection took place in the cell
+            pc_num += gamma_ti * (St - D_ti); // Weighted contribution of false alarms
         }
       }
       pw = pw_num / T_max; // Updated pw
