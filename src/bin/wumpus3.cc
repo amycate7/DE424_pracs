@@ -93,6 +93,11 @@ int main(int, char *argv[]) {
     double margin = 0.0;
     double floor = 0.0;
 
+    // EM requires Sum-Product, not Max-Product
+    rcptr<Marginalizer> sumMarg = uniqptr<Marginalizer>(new DiscreteTable_SumMarginalize<T>);
+    rcptr<Normalizer> sumNorm = uniqptr<Normalizer>(new DiscreteTable_SumNormalize<T>);
+    rcptr<InplaceNormalizer> sumINorm = uniqptr<InplaceNormalizer>(new DiscreteTable_InplaceSumNormalize<T>);
+
     // =====================================
     // Define the RVS
     // =====================================
@@ -143,7 +148,7 @@ int main(int, char *argv[]) {
     // Implement the factors
     // ====================================
 
-    // Wumpus transition factor: p(W_t | W_{t-1})
+    // Wumpus transition factor: p(W_t | W_{t-1}): Only create once since this is not dependent on unknown parameters
     vector<rcptr<Factor>> transitionFactors; // Vector to store our transition factor pointers for every time step
 
     for (int t = 1; t < T_max; t++) {
@@ -194,75 +199,81 @@ int main(int, char *argv[]) {
       //cout << "Created transition factor for t=" << t << endl;
       //cout << *ptrTransition << endl;
     }
+
+    // ============================
+    // EM Algorithm
+    // ============================
+    for (int iter = 0; iter < max_iters && delta > epsilon; iter++) {
+      double old_pw = pw;
+      double old_pc = pc;
+          
+      // Create a vector container to hold all the factors of the model
+      vector<rcptr<Factor>> factorPtrs;
+      // Push transition factors onto factorPtrs
+      for (auto& ptr : transitionFactors) {
+        factorPtrs.push_back(ptr);
+      }
+
+      // E-step: Construct detection factors based on current param estimates and perform inference
+      // Wumpus Detection factors p(D_loc^t|W^t)
+      for (int t = 0; t < T_max; t++) {
+        int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
+
+        // loc is the location of the specific cell we are building a factor for
+        for (int loc = 0; loc < num_cells; loc++) {
+          int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
+          map<vector<T>, FProb> detectionProbs;
+
+          // w_pos is the latent position of the wumpus 
+          for (int w_pos = 0; w_pos < num_cells; w_pos++){
+            if (w_pos == loc) {
+              // Detection location is equal to the wumpus position
+              detectionProbs[{1, w_pos}] = old_old_pw; // Detection
+              detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
+            } else {
+              detectionProbs[{1, w_pos}] = old_pc; // Clutter 
+              detectionProbs[{0, w_pos}] = 1.0 - old_pc; // No detection
+            }
+          } // end of wumpus location loop
+          
+          rcptr<Factor> ptrDetections = uniqptr<DT>(
+            new DT(
+              {D_curr, W_curr},
+              {binDom, locationDom},
+              defprob,
+              detectionProbs,
+              margin, floor, false,     // Ensure BP
+              sumMarg, sumINorm, sumNorm
+            )
+          );
+
+          factorPtrs.push_back(ptrDetections);
+
+        } // end of grid location loop
+      } // end of outer time step loop
+
+      //Construct CG
+      ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
+
+      // Message passing
+      map<Idx2, rcptr<Factor> > msgs;
+      MessageQueue msgQ;
+      unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ); // CG is calibrated after this pass
+      cout << "Sent " << nMsgs << " messages\n";
+
+      // M-step: param updates
+      double pw_num = 0.0;
+      double pc_num = 0.0;
       
-    // Wumpus Detection factors p(D_loc^t|W^t)
-    vector<rcptr<Factor>> detectionFactors; // Vector of pointers pointing to detection factors for each time step
 
 
-    for (int t = 0; t < T_max; t++) {
-      int W_curr = W_rvs[t]; // Extract RV index of W RV at time t
 
-      // loc is the location of the specific cell we are building a factor for
-      for (int loc = 0; loc < num_cells; loc++) {
-        int D_curr = D_rvs[t][loc]; // Extract index of D RV at time t and grid location loc
-        map<vector<T>, FProb> detectionProbs;
-
-        // w_pos is the latent position of the wumpus 
-        for (int w_pos = 0; w_pos < num_cells; w_pos++){
-          if (w_pos == loc) {
-            // Detection location is equal to the wumpus position
-            detectionProbs[{1, w_pos}] = pw; // Detection
-            detectionProbs[{0, w_pos}] = 1.0 - pw;  // Missed detection
-          } else {
-            detectionProbs[{1, w_pos}] = pc; // Clutter 
-            detectionProbs[{0, w_pos}] = 1.0 - pc; // No detection
-          }
-        } // end of wumpus location loop
-        
-        rcptr<Factor> ptrDetections = uniqptr<DT>(
-          new DT(
-            {D_curr, W_curr},
-            {binDom, locationDom},
-            defprob,
-            detectionProbs,
-            margin, floor, false,     // Extra arguments for MAP 
-            margPtr, iNormPtr, normPtr
-          )
-        );
-
-        detectionFactors.push_back(ptrDetections);
-        //cout << "Created detection factor for t =" << t << " and cell =" << loc <<endl;
-        //cout << *ptrDetections << endl;
-
-      } // end of grid location loop
-    } // end of outer time step loop
+    } // end of EM
 
     // =============================
     // Construct cluster graph (should result in junction tree, therefore exact inference)
     // =============================
 
-    // Create a vector container to hold all the factors of the model
-    vector<rcptr<Factor>> factorPtrs;
-
-    // Populate the vector
-    for (auto& ptr : transitionFactors) {
-      factorPtrs.push_back(ptr);
-    }
-
-    for (auto& ptr : detectionFactors) {
-      factorPtrs.push_back(ptr);
-    }
-
-    // Create a cluster graph
-    ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
-    cg.exportToGraphViz("wumpus_cg");
-
-    // Perform inference
-    map<Idx2, rcptr<Factor> > msgs;
-    MessageQueue msgQ;
-
-    unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ);
-    cout << "Sent " << nMsgs << " messages\n";
 
     // =========================================================================================================
     // Perform MAP inference on Wumpus location for all time steps and save results to file wumpus_location1.txt
