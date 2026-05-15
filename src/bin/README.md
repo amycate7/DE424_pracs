@@ -66,3 +66,31 @@ Accuracy, RMSE, and Mean Manhattan Distance (MMD) output to the terminal.
 
 - C++: emdw library dependencies (as per module setup).
 - Python 3: requires matplotlib and numpy libraries.
+
+--
+### INSTALLATION AND SETUP FOR MARKING
+
+To ensure the project compiles correctly within the standard DE424 
+environment, please follow these placement instructions:
+
+1. Copy the provided source files (wumpus1.cc, wumpus2.cc, wumpus3.cc) 
+   into your existing 'emdw/src/bin/' directory.
+2. Copy 'datasetplot.py' into the same 'emdw/src/bin/' directory.
+3. Ensure the 'dataset1', 'dataset2', 'dataset3', and 'groundtruth' 
+   folders are placed in 'emdw/src/' so that relative data paths 
+   remain valid. The data provided from StemLearn must be in these 
+   folders, named identically as they were provided.
+4. Update 'emdw/src/bin/CMakeLists.txt' by adding the following lines 
+   at the end:
+
+   add_executable(wumpus1 wumpus1.cc)
+   target_link_libraries(wumpus1 emdw)
+
+   add_executable(wumpus2 wumpus2.cc)
+   target_link_libraries(wumpus2 emdw)
+
+   add_executable(wumpus3 wumpus3.cc)
+   target_link_libraries(wumpus3 emdw)
+
+Once these files are in place, proceed with the standard build 
+instructions provided in Section 2.
