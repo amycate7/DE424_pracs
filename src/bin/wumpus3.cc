@@ -264,7 +264,85 @@ int main(int, char *argv[]) {
       // M-step: param updates
       double pw_num = 0.0;
       double pc_num = 0.0;
+
+      for (int t = 0; t < T_max; t++) {
+        rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
+        int St = 0; total detections at time t
+        for (int loc = 0; loc < num_cells; loc++) St += obsv[loc]; // Check this
+
+        for (int i = 0; i < num_cells; i++) {
+          double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i}); // Check I dont think it will work
+
+          if (obsv[loc] == 1) {
+            pw_num += gamma_ti;
+            pc_num += gamma_ti * (St - obsv[loc]);
+
+          }
+        }
+
+        pw = pw_num / T_max; // Updated pw
+        pc = pc_num / (T_max * (num_cells - 1)); // Updated pc
+
+        delta = abs(pw - old_pw) + abs(pc - old_pc);
+        cout << "Iteration " << iter << ": pw=" << pw << ", pc=" << pc << endl;
+      }
+
+      // After params have converged, run one more pass with MAP inference to obtain the trajectory
+         // Create a cluster graph
+    ClusterGraph cg(ClusterGraph::BETHE, factorPtrs, obsv);
+
+    // Perform inference
+    map<Idx2, rcptr<Factor> > msgs;
+    MessageQueue msgQ;
+
+    unsigned nMsgs = loopyBP_CG(cg, msgs, msgQ);
+    cout << "Sent " << nMsgs << " messages\n";
+
+    // ================================================
+    // Inferred wumpus trajectory using MAP inference
+    // ================================================
+        // Save MAP results to a .txt for further model performance evaluation
+    ofstream outFile("wumpus_location3.txt");
+
+    if (!outFile.is_open()) {
+      cerr << "Error: Could not create wumpus_location2.txt" << endl;
+    } else {
+      cout << "Inferred MAP trajectory saved to file wumpus_location2.txt" << endl;
       
+      for (int t = 0; t < T_max; t++) {
+        rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
+
+        double max_likelihood = -1.0;
+        int best_cell = -1;
+
+        for (int row = 0; row < R; row++) {
+          for (int col = 0; col < C; col++) {
+            // Calculate the cell index and extract likelihood
+            unsigned int cell_idx = row * C + col;
+            double likelihood = beliefT->potentialAt({W_rvs[t]}, {(T)cell_idx});
+
+            if (likelihood > max_likelihood) {
+              max_likelihood = likelihood;
+              best_cell = cell_idx;
+            }
+
+          }
+        }
+
+        // Convert cell index back to x and y coordinates
+        int x = best_cell % C;
+        int y = best_cell / C;
+
+        outFile << x << " " << y << endl;
+
+      // Convert the bestCell index back to (row, col) for clear output
+      cout << "Time " << t << ": Wumpus at [" << x << ", " << y 
+          << "] (Cell ID: " << best_cell << ", Likelihood: " << max_likelihood << ")" << endl;
+
+      }
+    }
+
+
 
 
 
