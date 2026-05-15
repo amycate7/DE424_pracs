@@ -71,7 +71,7 @@ int main(int, char *argv[]) {
     int C = 20; // Num columns
     
     // Variable initialisation
-    double pw = 0.7; // Initial estimates of pw
+    double pw = 0.8; // Initial estimates of pw
     double pc = 0.1; // Initial estimates of pc
     double epsilon = 1e-5;
     double delta = 1.0;
@@ -92,11 +92,6 @@ int main(int, char *argv[]) {
     rcptr<Normalizer> normPtr = uniqptr<Normalizer>(new DiscreteTable_MaxNormalize<T>);
     double margin = 0.0;
     double floor = 0.0;
-
-    // EM requires Sum-Product, not Max-Product
-    rcptr<Marginalizer> sumMarg = uniqptr<Marginalizer>(new DiscreteTable_SumMarginalize<T>);
-    rcptr<Normalizer> sumNorm = uniqptr<Normalizer>(new DiscreteTable_SumNormalize<T>);
-    rcptr<InplaceNormalizer> sumINorm = uniqptr<InplaceNormalizer>(new DiscreteTable_InplaceSumNormalize<T>);
 
     // =====================================
     // Define the RVS
@@ -189,20 +184,13 @@ int main(int, char *argv[]) {
           {W_prev, W_curr},           // Variable IDs
           {locationDom, locationDom}, // Their domains
           defprob,
-          transitionProbs,            // Sparse probability map
-          margin, floor, false,       // Extra arguments for MAP    
-          sumMarg, sumINorm, sumNorm   
+          transitionProbs  
         )
       );
 
       transitionFactors.push_back(ptrTransition);
       //cout << "Created transition factor for t=" << t << endl;
       //cout << *ptrTransition << endl;
-    }
-
-    // Build helper detection factor for MAX
-    void buildDetectionFactorMax(double current_pw, double current_pc) {
-
     }
 
     // ============================
@@ -232,11 +220,11 @@ int main(int, char *argv[]) {
           for (int w_pos = 0; w_pos < num_cells; w_pos++){
             if (w_pos == loc) {
               // Detection location is equal to the wumpus position
-              detectionProbs[{1, w_pos}] = current_pw; // Detection
-              detectionProbs[{0, w_pos}] = 1.0 - current_pw;  // Missed detection
+              detectionProbs[{1, w_pos}] = old_pw; // Detection
+              detectionProbs[{0, w_pos}] = 1.0 - old_pw;  // Missed detection
             } else {
-              detectionProbs[{1, w_pos}] = current_pc; // Clutter 
-              detectionProbs[{0, w_pos}] = 1.0 - current_pc; // No detection
+              detectionProbs[{1, w_pos}] = old_pc; // Clutter 
+              detectionProbs[{0, w_pos}] = 1.0 - old_pc; // No detection
             }
           } // end of wumpus location loop
           
@@ -245,9 +233,7 @@ int main(int, char *argv[]) {
               {D_curr, W_curr},
               {binDom, locationDom},
               defprob,
-              detectionProbs,
-              margin, floor, false,     // Ensure BP
-              sumMarg, sumINorm, sumNorm
+              detectionProbs
             )
           );
 
@@ -274,7 +260,7 @@ int main(int, char *argv[]) {
 
         for (int i = 0; i < num_cells; i++) {
             double gamma_ti = beliefT->potentialAt({W_rvs[t]}, {(T)i});
-            int Y_ti = ((int)obsv[D_rvs[t][i]] == 1);
+            int Y_ti = ((int)obsv[D_rvs[t][i]] == 1) ? 1 : 0;
             if (Y_ti) pw_num += gamma_ti;
             pc_num += gamma_ti * (St - Y_ti);
         }
@@ -290,20 +276,19 @@ int main(int, char *argv[]) {
     vector<rcptr<Factor>> finalPtrs;
 
     // Rebuild transition factor with margPtr (MAX)
-    vector<rcptr<Factor>> transitionFactors; // Vector to store our transition factor pointers
+    vector<rcptr<Factor>> transitionFactorsFinal; // Vector to store our transition factor pointers
 
     for (int t = 1; t < T_max; t++) {
       int W_curr = W_rvs[t];
       int W_prev = W_rvs[t-1];
 
-      map<vector<T>, FProb> transitionProbs;
-      int width = 5; // Grid width
+      map<vector<T>, FProb> transitionProbsFinal;
       
       // i is the index of W_prev
       for (int i = 0; i < num_cells; i++) {
         // Convert cell index to (x, y) coordinates
-        int x = i % width; // x-coordinate
-        int y = i / width; // y-coordinate
+        int x = i % C; // Column index (0 to 19)
+        int y = i / C; // Row index (0 to 9)
         double stay_prob = 0.0; // Probability of wumpus staying in the same cell
 
         // Define possible grid moves (up, down, left, right)
@@ -314,16 +299,16 @@ int main(int, char *argv[]) {
           int new_x = x + dx[move]; // wumpus new x-coordinate
           int new_y = y + dy[move]; // wumpus new y-coordinate
 
-          if (new_x >= 0 && new_x < width && new_y >=0 && new_y < width) {
+          if (new_x >= 0 && new_x < C && new_y >=0 && new_y < R) {
             // Valid transition 
-            int new_i = new_y * width + new_x; // Convert back to cell index
-            transitionProbs[{i, new_i}] = 0.25; 
+            int new_i = new_y * C + new_x; // Convert back to cell index
+            transitionProbsFinal[{i, new_i}] = 0.25; 
           } else {
             // Invalid transition
             stay_prob += 0.25; // Accumulate probability of staying in the same cell
           }
         } 
-        transitionProbs[{i, i}] = stay_prob;// Probability of wumpus staying in the same cell
+        transitionProbsFinal[{i, i}] = stay_prob;// Probability of wumpus staying in the same cell
       }
       
       rcptr<Factor> ptrTransition = uniqptr<DT>(
@@ -331,19 +316,19 @@ int main(int, char *argv[]) {
           {W_prev, W_curr},           // Variable IDs
           {locationDom, locationDom}, // Their domains
           defprob,
-          transitionProbs,            // Sparse probability map
+          transitionProbsFinal,            // Sparse probability map
           margin, floor, false,       // Extra arguments for MAP    
           margPtr, iNormPtr, normPtr   
         )
       );
 
-      transitionFactors.push_back(ptrTransition);
+      transitionFactorsFinal.push_back(ptrTransition);
       //cout << "Created transition factor for t=" << t << endl;
       //cout << *ptrTransition << endl;
     }
 
     // Push transition factors onto factorPtrs
-    for (auto& ptr : transitionFactors) {
+    for (auto& ptr : transitionFactorsFinal) {
       finalPtrs.push_back(ptr);
     }
     
@@ -406,7 +391,7 @@ int main(int, char *argv[]) {
       cout << "Inferred MAP trajectory saved to file wumpus_location3.txt" << endl;
       
       for (int t = 0; t < T_max; t++) {
-        rcptr<Factor> beliefT = queryLBP_CG(cgFinal, msgs, {W_rvs[t]})->normalize(); // Query the graph
+        rcptr<Factor> beliefT = queryLBP_CG(cgFinal, finalMsgs, {W_rvs[t]})->normalize(); // Query the graph
 
         double max_likelihood = -1.0;
         int best_cell = -1;
@@ -437,63 +422,7 @@ int main(int, char *argv[]) {
 
       }
     }
-
-
-
-
-
-    } // end of EM
-
-    // =============================
-    // Construct cluster graph (should result in junction tree, therefore exact inference)
-    // =============================
-
-
-    // =========================================================================================================
-    // Perform MAP inference on Wumpus location for all time steps and save results to file wumpus_location1.txt
-    // =========================================================================================================
-
-    // Save MAP results to a .txt for further model performance evaluation
-    ofstream outFile("wumpus_location3.txt");
-
-    if (!outFile.is_open()) {
-      cerr << "Error: Could not create wumpus_location3.txt" << endl;
-    } else {
-      cout << "Inferred MAP trajectory saved to file wumpus_location3.txt" << endl;
-      
-      for (int t = 0; t < T_max; t++) {
-        rcptr<Factor> beliefT = queryLBP_CG(cg, msgs, {W_rvs[t]})->normalize(); // Query the graph
-
-        double max_likelihood = -1.0;
-        int best_cell = -1;
-
-        for (int row = 0; row < R; row++) {
-          for (int col = 0; col < C; col++) {
-            // Calculate the cell index and extract likelihood
-            unsigned int cell_idx = row * C + col;
-            double likelihood = beliefT->potentialAt({W_rvs[t]}, {(T)cell_idx});
-
-            if (likelihood > max_likelihood) {
-              max_likelihood = likelihood;
-              best_cell = cell_idx;
-            }
-
-          }
-        }
-
-        // Convert cell index back to x and y coordinates
-        int x = best_cell % C;
-        int y = best_cell / C;
-
-        outFile << x << " " << y << endl;
-
-      // Convert the bestCell index back to (row, col) for clear output
-      cout << "Time " << t << ": Wumpus at [" << x << ", " << y 
-          << "] (Cell ID: " << best_cell << ", Likelihood: " << max_likelihood << ")" << endl;
-
-      }
-    }
-     
+       
 
     return 0; 
   } // try
